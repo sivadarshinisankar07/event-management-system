@@ -1,16 +1,49 @@
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useRegistrations } from '../../context/RegistrationContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import DashboardLayout from '../../components/DashboardLayout.jsx';
 import TicketCard from '../../components/TicketCard.jsx';
 import EmptyState from '../../components/EmptyState.jsx';
+import LoadingSpinner from '../../components/LoadingSpinner.jsx';
+import { getTicketById } from '../../services/ticketService.js';
 
 export default function TicketDetails() {
   const { ticketId } = useParams();
-  const { tickets } = useRegistrations();
+  const { tickets, loading: contextLoading } = useRegistrations();
   const { currentUser } = useAuth();
+  const [ticket, setTicket] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const ticket = tickets.find((t) => t.ticketId === ticketId && t.userId === currentUser.userId);
+  useEffect(() => {
+    const matched = tickets.find(
+      (t) =>
+        (t.ticketId === ticketId || t.id === ticketId) &&
+        (t.userId === currentUser.userId || t.userDbId === currentUser.id)
+    );
+
+    if (matched) {
+      setTicket(matched);
+      setLoading(false);
+      return;
+    }
+
+    if (!contextLoading) {
+      getTicketById(ticketId)
+        .then((fetched) => {
+          if (
+            fetched &&
+            (fetched.userId === currentUser.userId || fetched.userDbId === currentUser.id)
+          ) {
+            setTicket(fetched);
+          } else {
+            setTicket(null);
+          }
+        })
+        .catch(() => setTicket(null))
+        .finally(() => setLoading(false));
+    }
+  }, [ticketId, tickets, contextLoading, currentUser]);
 
   return (
     <DashboardLayout role="participant">
@@ -22,7 +55,9 @@ export default function TicketDetails() {
         <Link to="/participant/tickets" className="btn btn-secondary btn-sm">Back to Tickets</Link>
       </div>
 
-      {!ticket ? (
+      {loading ? (
+        <LoadingSpinner />
+      ) : !ticket ? (
         <EmptyState icon="🚫" title="Ticket not found" message="This ticket does not exist or was not issued to you." />
       ) : (
         <div style={{ maxWidth: 520 }}>

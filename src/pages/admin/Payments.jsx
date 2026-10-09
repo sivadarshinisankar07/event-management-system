@@ -27,10 +27,14 @@ export default function Payments() {
     return [...result].sort((a, b) => b.date.localeCompare(a.date));
   }, [payments, search, statusFilter, modeFilter]);
 
-  function handleVerify() {
-    const result = verifyOfflinePayment(confirmPayment.paymentId);
-    if (result.success) showToast('Offline payment verified. Registration confirmed and ticket generated.', 'success');
-    else showToast(result.message, 'error');
+  async function handleVerify() {
+    try {
+      const result = await verifyOfflinePayment(confirmPayment.paymentId);
+      if (result.success) showToast('Offline payment verified. Registration confirmed.', 'success');
+      else showToast(result.message || 'Failed to verify payment.', 'error');
+    } catch (err) {
+      showToast('Error connecting to payment server.', 'error');
+    }
     setConfirmPayment(null);
   }
 

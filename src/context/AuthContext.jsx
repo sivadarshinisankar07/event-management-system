@@ -7,19 +7,44 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Initialize session: restore cached user immediately, verify with backend /me in background
   useEffect(() => {
-    setCurrentUser(authService.getCurrentUser());
-    setLoading(false);
+    async function initSession() {
+      const cached = authService.getCurrentUser();
+      const token = authService.getAuthToken();
+
+      if (token && cached) {
+        setCurrentUser(cached);
+        try {
+          const verifyResult = await authService.fetchMe();
+          if (verifyResult.success) {
+            setCurrentUser(verifyResult.user);
+          } else {
+            // Token expired or invalid
+            authService.logout();
+            setCurrentUser(null);
+          }
+        } catch {
+          // If offline or temporary network failure, maintain cached session
+        }
+      } else {
+        authService.logout();
+        setCurrentUser(null);
+      }
+      setLoading(false);
+    }
+
+    initSession();
   }, []);
 
-  const login = useCallback((credentials) => {
-    const result = authService.login(credentials);
+  const login = useCallback(async (credentials) => {
+    const result = await authService.login(credentials);
     if (result.success) setCurrentUser(result.user);
     return result;
   }, []);
 
-  const register = useCallback((data) => {
-    const result = authService.register(data);
+  const register = useCallback(async (data) => {
+    const result = await authService.register(data);
     if (result.success) setCurrentUser(result.user);
     return result;
   }, []);
@@ -29,9 +54,9 @@ export function AuthProvider({ children }) {
     setCurrentUser(null);
   }, []);
 
-  const updateProfile = useCallback((updates) => {
+  const updateProfile = useCallback(async (updates) => {
     if (!currentUser) return { success: false, message: 'Not logged in.' };
-    const result = authService.updateProfile(currentUser.userId, updates);
+    const result = await authService.updateProfile(currentUser.userId, updates);
     if (result.success) setCurrentUser(result.user);
     return result;
   }, [currentUser]);

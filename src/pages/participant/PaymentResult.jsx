@@ -10,7 +10,10 @@ export default function PaymentResult() {
   const { registrations } = useRegistrations();
   const { currentUser } = useAuth();
 
-  const registration = registrations.find((r) => r.registrationId === registrationId && r.userId === currentUser.userId);
+  const registration = registrations.find(
+    (r) => (r.registrationId === registrationId || r.id === registrationId) &&
+           (!currentUser || r.userId === currentUser.userId || r.userDbId === currentUser.id)
+  );
   const success = location.state?.success;
   const offline = location.state?.offline;
 

@@ -14,28 +14,50 @@ export default function CheckIn() {
   const [eventFilter, setEventFilter] = useState('');
   const [ticketIdInput, setTicketIdInput] = useState('');
   const [lookupResult, setLookupResult] = useState(null); // { valid, message, ticket }
+  const [verifying, setVerifying] = useState(false);
+  const [checkingIn, setCheckingIn] = useState(false);
 
-  function handleVerify(e) {
+  async function handleVerify(e) {
     e.preventDefault();
     if (!ticketIdInput.trim()) return;
-    const result = validateTicketForCheckIn(ticketIdInput);
+    setVerifying(true);
+    try {
+      const result = await validateTicketForCheckIn(ticketIdInput, eventFilter);
 
-    if (result.valid && eventFilter && result.ticket.eventId !== eventFilter) {
-      setLookupResult({ valid: false, message: 'This ticket does not belong to the selected event.' });
-      return;
+      if (
+        result.valid &&
+        eventFilter &&
+        result.ticket &&
+        result.ticket.eventId !== eventFilter &&
+        String(result.ticket.eventDbId) !== String(eventFilter)
+      ) {
+        setLookupResult({ valid: false, message: 'This ticket does not belong to the selected event.', ticket: result.ticket });
+        return;
+      }
+      setLookupResult(result);
+    } catch (err) {
+      setLookupResult({ valid: false, message: 'Failed to verify ticket.' });
+    } finally {
+      setVerifying(false);
     }
-    setLookupResult(result);
   }
 
-  function handleConfirmCheckIn() {
-    const result = checkIn(ticketIdInput);
-    if (!result.valid) {
-      showToast(result.message, 'error');
+  async function handleConfirmCheckIn() {
+    setCheckingIn(true);
+    try {
+      const result = await checkIn(ticketIdInput);
+      if (!result.valid && !result.success) {
+        showToast(result.message || 'Check-in failed.', 'error');
+        setLookupResult(result);
+        return;
+      }
+      showToast('Check-in successful!', 'success');
       setLookupResult(result);
-      return;
+    } catch (err) {
+      showToast('Error processing check-in.', 'error');
+    } finally {
+      setCheckingIn(false);
     }
-    showToast('Check-in successful!', 'success');
-    setLookupResult(result);
   }
 
   function resetForm() {
@@ -70,7 +92,9 @@ export default function CheckIn() {
                 placeholder="e.g. EVT-CD-8A92K"
               />
             </div>
-            <button type="submit" className="btn btn-primary btn-block">Verify</button>
+            <button type="submit" className="btn btn-primary btn-block" disabled={verifying}>
+              {verifying ? 'Verifying...' : 'Verify'}
+            </button>
           </form>
           <p className="form-hint mt-16">Manual Ticket ID entry works for this demo. QR camera scanning can be added later.</p>
         </div>
@@ -97,7 +121,13 @@ export default function CheckIn() {
                 <div className="ticket-info-row"><span className="k">Ticket ID</span><span className="v">{lookupResult.ticket.ticketId}</span></div>
               </div>
               {lookupResult.valid && !lookupResult.ticket.checkedIn && (
-                <button className="btn btn-success btn-block mt-16" onClick={handleConfirmCheckIn}>Confirm Check-in</button>
+                <button
+                  className="btn btn-success btn-block mt-16"
+                  onClick={handleConfirmCheckIn}
+                  disabled={checkingIn}
+                >
+                  {checkingIn ? 'Checking In...' : 'Confirm Check-in'}
+                </button>
               )}
               {lookupResult.ticket.checkedIn && (
                 <p className="text-muted mt-16">✅ This ticket has been checked in.</p>

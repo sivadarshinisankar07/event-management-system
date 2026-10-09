@@ -5,9 +5,6 @@ import * as ticketService from '../services/ticketService.js';
 import * as refundService from '../services/refundService.js';
 import * as eventService from '../services/eventService.js';
 
-// This context orchestrates the whole registration -> payment -> ticket ->
-// check-in -> refund lifecycle, since these four domains are tightly
-// interlinked in this application's workflow.
 const RegistrationContext = createContext(null);
 
 export function RegistrationProvider({ children }) {
@@ -17,129 +14,110 @@ export function RegistrationProvider({ children }) {
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(() => {
-    setRegistrations(registrationService.getAllRegistrations());
-    setPayments(paymentService.getAllPayments());
-    setTickets(ticketService.getAllTickets());
-    setRefunds(refundService.getAllRefunds());
+  const refresh = useCallback(async () => {
+    try {
+      const regList = await registrationService.getAllRegistrations();
+      setRegistrations(regList);
+    } catch (err) {
+      console.error('Failed to refresh registrations:', err);
+    }
+    try {
+      const payList = await paymentService.getAllPayments();
+      setPayments(payList);
+    } catch (err) {
+      console.error('Failed to refresh payments:', err);
+    }
+    try {
+      const ticketList = await ticketService.getAllTickets();
+      setTickets(ticketList);
+    } catch (err) {
+      console.error('Failed to refresh tickets:', err);
+    }
+    try {
+      const refundList = await refundService.getAllRefunds();
+      setRefunds(refundList);
+    } catch (err) {
+      console.error('Failed to refresh refunds:', err);
+    }
   }, []);
 
   useEffect(() => {
-    refresh();
-    setLoading(false);
+    async function init() {
+      await refresh();
+      setLoading(false);
+    }
+    init();
   }, [refresh]);
 
   // Step 1: Participant clicks "Register Now".
-  const registerForEvent = useCallback((user, event) => {
-    const result = registrationService.createRegistration({ user, event });
+  const registerForEvent = useCallback(async (user, event) => {
+    const targetEventId = event.id || event.eventId;
+    const result = await registrationService.createRegistration({ eventId: targetEventId });
     if (!result.success) {
-      refresh();
+      await refresh();
       return result;
     }
     const { registration } = result;
 
-    if (event.paymentMode === 'Free') {
-      const ticket = ticketService.createTicket({ registration, event });
-      registrationService.updateRegistration(registration.registrationId, { ticketId: ticket.ticketId });
-      paymentService.createPayment({ registration, event, mode: 'Free', status: 'Not Required' });
-    } else if (event.paymentMode === 'Offline') {
-      paymentService.createPayment({ registration, event, mode: 'Offline', status: 'Pending' });
-    }
-    // Online payments are recorded when the participant completes the
-    // Payment page (see submitOnlinePayment below).
-
-    refresh();
+    await refresh();
     return { success: true, registration };
   }, [refresh]);
 
-  // Step 2 (Online only): participant submits the mock payment form.
-  const submitOnlinePayment = useCallback((registrationId, cardDetails) => {
-    const registration = registrationService.getRegistrationById(registrationId);
-    const event = eventService.getEventById(registration.eventId);
-    const { success } = paymentService.simulateOnlinePayment(cardDetails);
-
-    const payment = paymentService.createPayment({
-      registration,
-      event,
-      mode: 'Online',
-      status: success ? 'Success' : 'Failed',
+  // Step 2 (Online only): participant submits the payment form.
+  const submitOnlinePayment = useCallback(async (registrationId, cardDetails) => {
+    const result = await paymentService.simulateOnlinePayment({
+      registrationId,
+      cardNumber: cardDetails?.cardNumber,
+      cardDetails,
     });
 
-    if (success) {
-      registrationService.updateRegistration(registrationId, {
-        paymentStatus: 'Success',
-        registrationStatus: 'Confirmed',
-      });
-      const ticket = ticketService.createTicket({ registration, event });
-      registrationService.updateRegistration(registrationId, { ticketId: ticket.ticketId });
-    } else {
-      registrationService.updateRegistration(registrationId, {
-        paymentStatus: 'Failed',
-        registrationStatus: 'Payment Failed',
-      });
-    }
-
-    refresh();
-    return { success, payment };
-  }, [refresh]);
-
-  // Admin verifies an offline payment.
-  const verifyOfflinePayment = useCallback((paymentId) => {
-    const payment = payments.find((p) => p.paymentId === paymentId) || paymentService.getAllPayments().find((p) => p.paymentId === paymentId);
-    if (!payment) return { success: false, message: 'Payment not found.' };
-    const registration = registrationService.getRegistrationById(payment.registrationId);
-    const event = eventService.getEventById(payment.eventId);
-
-    paymentService.updatePayment(paymentId, { status: 'Success' });
-    registrationService.updateRegistration(payment.registrationId, {
-      paymentStatus: 'Success',
-      registrationStatus: 'Confirmed',
-    });
-    const ticket = ticketService.createTicket({ registration, event });
-    registrationService.updateRegistration(payment.registrationId, { ticketId: ticket.ticketId });
-
-    refresh();
-    return { success: true };
-  }, [payments, refresh]);
-
-  const checkIn = useCallback((ticketId) => {
-    const validation = ticketService.validateTicketForCheckIn(ticketId);
-    if (!validation.valid) {
-      return validation;
-    }
-    ticketService.checkInTicket(ticketId);
-    const ticket = validation.ticket;
-    registrationService.updateRegistration(ticket.registrationId, { checkedIn: true });
-    refresh();
-    return { valid: true, ticket: { ...ticket, checkedIn: true, status: 'Checked In' } };
-  }, [refresh]);
-
-  const requestRefund = useCallback((registrationId, reason) => {
-    const registration = registrationService.getRegistrationById(registrationId);
-    const event = eventService.getEventById(registration.eventId);
-    const result = refundService.createRefundRequest({ registration, event, reason });
-    refresh();
+    await refresh();
     return result;
   }, [refresh]);
 
-  const approveRefund = useCallback((refundId) => {
-    const refund = refundService.getAllRefunds().find((r) => r.refundId === refundId);
-    if (!refund) return { success: false, message: 'Refund not found.' };
-    refundService.approveRefund(refundId);
-    registrationService.updateRegistration(refund.registrationId, { registrationStatus: 'Cancelled' });
-    const registration = registrationService.getRegistrationById(refund.registrationId);
-    if (registration?.ticketId) {
-      ticketService.invalidateTicket(registration.ticketId);
-    }
-    eventService.adjustRegisteredCount(refund.eventId, -1);
-    refresh();
-    return { success: true };
+  // Admin verifies an offline payment.
+  const verifyOfflinePayment = useCallback(async (paymentId) => {
+    const result = await paymentService.verifyOfflinePayment(paymentId);
+    await refresh();
+    return result;
   }, [refresh]);
 
-  const rejectRefund = useCallback((refundId, rejectionReason) => {
-    refundService.rejectRefund(refundId, rejectionReason);
-    refresh();
-    return { success: true };
+  const checkIn = useCallback(async (ticketId) => {
+    const result = await ticketService.checkInTicket(ticketId);
+    if (!result.valid && !result.success) {
+      return result;
+    }
+    await refresh();
+    return {
+      valid: true,
+      success: true,
+      message: result.message || 'Check-in successful!',
+      ticket: result.ticket,
+    };
+  }, [refresh]);
+
+  const requestRefund = useCallback(async (registrationId, reason) => {
+    const result = await refundService.createRefundRequest({ registrationId, reason });
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const approveRefund = useCallback(async (refundId) => {
+    const result = await refundService.approveRefund(refundId);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const rejectRefund = useCallback(async (refundId, rejectionReason) => {
+    const result = await refundService.rejectRefund(refundId, rejectionReason);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const cancelRegistration = useCallback(async (registrationId) => {
+    const result = await registrationService.cancelRegistration(registrationId);
+    if (result.success) await refresh();
+    return result;
   }, [refresh]);
 
   const updateRegistration = useCallback((registrationId, updates) => {
@@ -156,6 +134,7 @@ export function RegistrationProvider({ children }) {
     loading,
     refresh,
     registerForEvent,
+    cancelRegistration,
     submitOnlinePayment,
     verifyOfflinePayment,
     checkIn,

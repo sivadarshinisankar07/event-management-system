@@ -27,17 +27,17 @@ export default function ManageEvents() {
     return [...result].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [events, search, statusFilter]);
 
-  function runAction() {
+  async function runAction() {
     if (!confirmAction) return;
     const { type, event } = confirmAction;
     let result;
-    if (type === 'publish') result = publishEvent(event.id);
-    if (type === 'suspend') result = suspendEvent(event.id);
-    if (type === 'resume') result = resumeEvent(event.id);
-    if (type === 'cancel') result = cancelEvent(event.id);
-    if (type === 'delete') result = deleteEvent(event.id);
+    if (type === 'publish') result = await publishEvent(event.id);
+    if (type === 'suspend') result = await suspendEvent(event.id);
+    if (type === 'resume') result = await resumeEvent(event.id);
+    if (type === 'cancel') result = await cancelEvent(event.id);
+    if (type === 'delete') result = await deleteEvent(event.id);
 
-    if (result?.success === false) showToast(result.message, 'error');
+    if (result?.success === false) showToast(result.message || 'Action failed.', 'error');
     else showToast(`Event ${type === 'delete' ? 'deleted' : type + 'd'} successfully.`, 'success');
     setConfirmAction(null);
   }

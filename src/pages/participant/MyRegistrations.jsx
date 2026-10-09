@@ -21,9 +21,9 @@ export default function MyRegistrations() {
 
   const myRegistrations = useMemo(
     () => registrations
-      .filter((r) => r.userId === currentUser.userId)
+      .filter((r) => !currentUser || r.userId === currentUser.userId || r.userDbId === currentUser.id)
       .filter((r) => !statusFilter || r.registrationStatus === statusFilter)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
     [registrations, currentUser, statusFilter]
   );
 

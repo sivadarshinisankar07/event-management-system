@@ -11,10 +11,14 @@ export default function AddEvent() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(formData, status) {
+  async function handleSubmit(formData, status) {
     setSubmitting(true);
-    addEvent({ ...formData, status });
+    const result = await addEvent({ ...formData, status });
     setSubmitting(false);
+    if (result && result.success === false) {
+      showToast(result.message || 'Failed to create event.', 'error');
+      return;
+    }
     showToast(status === 'Published' ? 'Event published successfully!' : 'Event saved as draft.', 'success');
     navigate('/admin/events');
   }

@@ -23,14 +23,14 @@ export default function Login() {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const validationErrors = validateLogin(form);
     setErrors(validationErrors);
     if (hasErrors(validationErrors)) return;
 
     setSubmitting(true);
-    const result = login(form);
+    const result = await login(form);
     setSubmitting(false);
 
     if (!result.success) {

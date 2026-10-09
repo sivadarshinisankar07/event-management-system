@@ -10,9 +10,12 @@ import { getDisplayStatus } from '../../services/eventService.js';
 
 export default function AdminDashboard() {
   const { events } = useEvents();
-  const { registrations, payments, refunds } = useRegistrations();
+  const { registrations, payments, refunds, tickets } = useRegistrations();
 
-  const summary = useMemo(() => getAdminSummary(), [events, registrations, payments, refunds]);
+  const summary = useMemo(
+    () => getAdminSummary({ events, registrations, payments, refunds, tickets }),
+    [events, registrations, payments, refunds, tickets]
+  );
 
   const recentRegistrations = useMemo(
     () => [...registrations].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5),

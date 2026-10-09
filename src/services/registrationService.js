@@ -1,84 +1,195 @@
-// Registration service — currently backed by localStorage.
-// Later: swap internals for fetch('/api/registrations') calls.
-import { KEYS, getCollection, saveCollection } from '../utils/storage.js';
-import { generateRegistrationId } from '../utils/ticketUtils.js';
-import { getEventById, adjustRegisteredCount, canRegister } from './eventService.js';
+/**
+ * Registration service — Connected to Node.js + Express REST API backend (/api/registrations)
+ * Backed by MySQL campus_events_db.registrations table.
+ */
 
-export function getAllRegistrations() {
-  return getCollection(KEYS.REGISTRATIONS);
+import { getAuthToken } from './authService.js';
+
+const API_BASE = 'http://localhost:5000/api/registrations';
+
+function getHeaders(isJson = true) {
+  const headers = {};
+  if (isJson) headers['Content-Type'] = 'application/json';
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
 }
 
-export function getRegistrationsByUser(userId) {
-  return getAllRegistrations().filter((r) => r.userId === userId);
+/**
+ * Fetch all registrations (Admins see all, participants see their own)
+ */
+export async function getAllRegistrations(params = {}) {
+  try {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.append(key, value);
+      }
+    });
+
+    const url = query.toString() ? `${API_BASE}?${query.toString()}` : API_BASE;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.registrations || [];
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch registrations from backend:', err);
+    return [];
+  }
 }
 
-export function getRegistrationsByEvent(eventId) {
-  return getAllRegistrations().filter((r) => r.eventId === eventId);
+/**
+ * Fetch registrations for the currently authenticated participant
+ */
+export async function getMyRegistrations() {
+  try {
+    const response = await fetch(`${API_BASE}/my`, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.registrations || [];
+    }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch user registrations:', err);
+    return [];
+  }
 }
 
-export function getRegistrationById(registrationId) {
-  return getAllRegistrations().find((r) => r.registrationId === registrationId) || null;
+/**
+ * Fetch registration by ID
+ */
+export async function getRegistrationById(registrationId) {
+  if (!registrationId) return null;
+  try {
+    const response = await fetch(`${API_BASE}/${registrationId}`, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.registration || null;
+    }
+    return null;
+  } catch (err) {
+    console.error(`Failed to fetch registration ${registrationId}:`, err);
+    return null;
+  }
 }
 
-export function isAlreadyRegistered(userId, eventId) {
-  return getAllRegistrations().some(
-    (r) => r.userId === userId && r.eventId === eventId && r.registrationStatus !== 'Cancelled'
+/**
+ * Fetch registrations for a specific event (Organizer / Admin view)
+ */
+export async function getRegistrationsByEvent(eventId) {
+  if (!eventId) return [];
+  try {
+    const response = await fetch(`http://localhost:5000/api/events/${eventId}/registrations`, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.registrations || [];
+    }
+    return [];
+  } catch (err) {
+    console.error(`Failed to fetch registrations for event ${eventId}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Check if user is already registered for an event
+ */
+export function isAlreadyRegistered(registrations = [], eventId) {
+  return registrations.some(
+    (r) => (r.eventId === eventId || r.eventDbId === eventId) && r.registrationStatus !== 'Cancelled'
   );
 }
 
-// Creates a new registration. paymentMode/status are set based on the
-// event's payment mode; the caller (RegistrationContext) decides whether to
-// route to the payment page next.
-export function createRegistration({ user, event }) {
-  const validation = {};
-  if (!canRegister(event)) {
-    return { success: false, message: 'Registration for this event is not currently open.' };
+/**
+ * Create a new event registration
+ */
+export async function createRegistration({ eventId }) {
+  try {
+    const response = await fetch(API_BASE, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: JSON.stringify({ eventId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        message: data.message || 'Registration failed.',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Registration successful.',
+      registration: data.registration,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to reach registration server. Please try again.',
+    };
   }
-  if (isAlreadyRegistered(user.userId, event.id)) {
-    return { success: false, message: 'You are already registered for this event.' };
-  }
-  if (event.registeredCount >= event.capacity) {
-    return { success: false, message: 'This event is full.' };
-  }
-
-  const paymentStatus = event.paymentMode === 'Free' ? 'Not Required' : 'Pending';
-  const registrationStatus = event.paymentMode === 'Free' ? 'Confirmed' : 'Pending';
-
-  const registration = {
-    registrationId: generateRegistrationId(),
-    userId: user.userId,
-    eventId: event.id,
-    eventName: event.name,
-    participantName: user.fullName,
-    participantEmail: user.email,
-    registrationDate: new Date().toISOString(),
-    paymentMode: event.paymentMode,
-    paymentStatus,
-    registrationStatus,
-    ticketId: null,
-    checkedIn: false,
-    createdAt: new Date().toISOString(),
-  };
-
-  const registrations = getAllRegistrations();
-  registrations.push(registration);
-  saveCollection(KEYS.REGISTRATIONS, registrations);
-  adjustRegisteredCount(event.id, 1);
-
-  return { success: true, registration };
 }
 
+/**
+ * Cancel an existing registration
+ */
+export async function cancelRegistration(registrationId) {
+  try {
+    const response = await fetch(`${API_BASE}/${registrationId}`, {
+      method: 'DELETE',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        message: data.message || 'Failed to cancel registration.',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Registration cancelled successfully.',
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to connect to server to cancel registration.',
+    };
+  }
+}
+
+/**
+ * Update registration (compatibility helper)
+ */
 export function updateRegistration(registrationId, updates) {
-  const registrations = getAllRegistrations();
-  const idx = registrations.findIndex((r) => r.registrationId === registrationId);
-  if (idx === -1) return { success: false, message: 'Registration not found.' };
-  registrations[idx] = { ...registrations[idx], ...updates };
-  saveCollection(KEYS.REGISTRATIONS, registrations);
-  return { success: true, registration: registrations[idx] };
+  return { success: true };
 }
 
-// Used when a registration fails/gets cancelled before confirmation, to
-// free up the seat that was tentatively held.
+/**
+ * Release seat helper (compatibility helper)
+ */
 export function releaseSeat(eventId) {
-  adjustRegisteredCount(eventId, -1);
+  return true;
 }

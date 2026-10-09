@@ -1,73 +1,169 @@
-// Auth service — currently backed by localStorage.
-// Later: replace the body of each function with fetch() calls to
-// Node.js + Express endpoints (e.g. POST /api/auth/login) while keeping
-// the same function names/signatures so no UI code needs to change.
-import { KEYS, getCollection, saveCollection, getItem, setItem, removeItem } from '../utils/storage.js';
-import { generateUserId } from '../utils/ticketUtils.js';
+/**
+ * Auth service — Connected to Node.js + Express REST API backend (/api/auth)
+ * Backed by JWT authentication and secure session storage.
+ */
+
+const API_BASE = 'http://localhost:5000/api/auth';
+const TOKEN_KEY = 'ce_auth_token';
+const USER_KEY = 'ce_current_user';
+
+export function getAuthToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function getCurrentUser() {
-  return getItem(KEYS.CURRENT_USER, null);
-}
-
-function persistCurrentUser(user) {
-  const { password, ...safeUser } = user;
-  setItem(KEYS.CURRENT_USER, safeUser);
-  return safeUser;
-}
-
-export function isEmailTaken(email) {
-  const users = getCollection(KEYS.USERS);
-  return users.some((u) => u.email.toLowerCase() === String(email).toLowerCase());
-}
-
-export function login({ email, password }) {
-  const users = getCollection(KEYS.USERS);
-  const user = users.find(
-    (u) => u.email.toLowerCase() === String(email).toLowerCase() && u.password === password
-  );
-  if (!user) {
-    return { success: false, message: 'Invalid email or password.' };
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-  const safeUser = persistCurrentUser(user);
-  return { success: true, user: safeUser };
 }
 
-// role: 'participant' | 'admin'
-// NOTE: Admin self-registration is enabled here only for this frontend-only
-// college project. When the Node.js + Express backend is built, this should
-// be replaced with an invitation/approval based admin creation flow.
-export function register({ fullName, email, password, phone, department, adminId, role }) {
-  if (isEmailTaken(email)) {
-    return { success: false, message: 'An account with this email already exists.' };
+export function saveSession(token, user) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } catch (err) {
+    console.error('Failed to save auth session to localStorage', err);
   }
-  const users = getCollection(KEYS.USERS);
-  const newUser = {
-    userId: generateUserId(),
-    fullName,
-    email,
-    password,
-    phone,
-    role,
-    department: role === 'participant' ? department : null,
-    adminId: role === 'admin' ? adminId : null,
-    createdAt: new Date().toISOString(),
-  };
-  users.push(newUser);
-  saveCollection(KEYS.USERS, users);
-  const safeUser = persistCurrentUser(newUser);
-  return { success: true, user: safeUser };
 }
 
+export function clearSession() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch (err) {
+    console.error('Failed to clear auth session from localStorage', err);
+  }
+}
+
+/**
+ * Log in participant or administrator
+ */
+export async function login({ email, password }) {
+  try {
+    const response = await fetch(`${API_BASE}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Invalid email or password.' };
+    }
+
+    saveSession(data.token, data.user);
+    return { success: true, user: data.user, token: data.token };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to connect to the authentication server. Please ensure the backend is running.',
+    };
+  }
+}
+
+/**
+ * Register a new participant account
+ */
+export async function register({ fullName, email, password, phone, department, role }) {
+  try {
+    const response = await fetch(`${API_BASE}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName,
+        email,
+        password,
+        phone,
+        department,
+        role: 'participant', // Public registration is strictly restricted to participants
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Registration failed.' };
+    }
+
+    saveSession(data.token, data.user);
+    return { success: true, user: data.user, token: data.token };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to connect to the authentication server. Please ensure the backend is running.',
+    };
+  }
+}
+
+/**
+ * Fetch current user from server using token (/api/auth/me)
+ */
+export async function fetchMe() {
+  const token = getAuthToken();
+  if (!token) return { success: false, message: 'No authentication token found.' };
+
+  try {
+    const response = await fetch(`${API_BASE}/me`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      saveSession(token, data.user);
+      return { success: true, user: data.user };
+    }
+
+    return { success: false, message: data.message || 'Session expired.' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Log out user and clear stored token/user
+ */
 export function logout() {
-  removeItem(KEYS.CURRENT_USER);
+  clearSession();
 }
 
-export function updateProfile(userId, updates) {
-  const users = getCollection(KEYS.USERS);
-  const idx = users.findIndex((u) => u.userId === userId);
-  if (idx === -1) return { success: false, message: 'User not found.' };
-  users[idx] = { ...users[idx], ...updates };
-  saveCollection(KEYS.USERS, users);
-  const safeUser = persistCurrentUser(users[idx]);
-  return { success: true, user: safeUser };
+/**
+ * Update authenticated user profile
+ */
+export async function updateProfile(userId, updates) {
+  const token = getAuthToken();
+  if (!token) return { success: false, message: 'Not authenticated.' };
+
+  try {
+    const response = await fetch(`${API_BASE}/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(updates),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to update profile.' };
+    }
+
+    saveSession(token, data.user);
+    return { success: true, user: data.user };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to connect to the server to update profile.',
+    };
+  }
 }

@@ -28,14 +28,14 @@ export default function Register() {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    const validationErrors = validateRegister({ ...form, role });
+    const validationErrors = validateRegister({ ...form, role: 'participant' });
     setErrors(validationErrors);
     if (hasErrors(validationErrors)) return;
 
     setSubmitting(true);
-    const result = register({ ...form, role });
+    const result = await register({ ...form, role: 'participant' });
     setSubmitting(false);
 
     if (!result.success) {
@@ -43,7 +43,7 @@ export default function Register() {
       return;
     }
     showToast('Account created successfully!', 'success');
-    navigate(role === 'admin' ? '/admin/dashboard' : '/participant/dashboard', { replace: true });
+    navigate('/participant/dashboard', { replace: true });
   }
 
   return (
@@ -53,11 +53,8 @@ export default function Register() {
         <p className="sub">Join CampusEvents to discover and manage college events.</p>
 
         <div className="role-toggle">
-          <button type="button" className={role === 'participant' ? 'active' : ''} onClick={() => setRole('participant')}>
-            Student / Participant
-          </button>
-          <button type="button" className={role === 'admin' ? 'active' : ''} onClick={() => setRole('admin')}>
-            Admin
+          <button type="button" className="active" style={{ width: '100%', cursor: 'default' }}>
+            Student / Participant Registration
           </button>
         </div>
 

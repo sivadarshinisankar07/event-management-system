@@ -1,99 +1,240 @@
-// Event service — currently backed by localStorage.
-// Later: swap internals for fetch('/api/events') calls (Node.js + Express + SQL).
-import { KEYS, getCollection, saveCollection } from '../utils/storage.js';
-import { generateEventId } from '../utils/ticketUtils.js';
+/**
+ * Event service — Connected to Node.js + Express REST API backend (/api/events)
+ * Backed by MySQL campus_events_db.events table.
+ */
 
-export function getAllEvents() {
-  return getCollection(KEYS.EVENTS);
+import { getAuthToken } from './authService.js';
+
+const API_BASE = 'http://localhost:5000/api/events';
+
+function getHeaders(isJson = true) {
+  const headers = {};
+  if (isJson) headers['Content-Type'] = 'application/json';
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
 }
 
-export function getEventById(id) {
-  return getAllEvents().find((e) => e.id === id) || null;
-}
+/**
+ * Fetch all events matching optional query filters from backend MySQL
+ */
+export async function getAllEvents(params = {}) {
+  try {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.append(key, value);
+      }
+    });
 
-export function addEvent(eventData) {
-  const events = getAllEvents();
-  const newEvent = {
-    id: generateEventId(),
-    registeredCount: 0,
-    status: eventData.status || 'Draft',
-    createdAt: new Date().toISOString(),
-    ...eventData,
-  };
-  events.push(newEvent);
-  saveCollection(KEYS.EVENTS, events);
-  return newEvent;
-}
+    const url = query.toString() ? `${API_BASE}?${query.toString()}` : API_BASE;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
 
-export function updateEvent(id, updates) {
-  const events = getAllEvents();
-  const idx = events.findIndex((e) => e.id === id);
-  if (idx === -1) return { success: false, message: 'Event not found.' };
-
-  // Guard: prevent lowering capacity below current registered count.
-  if (updates.capacity !== undefined) {
-    const newCapacity = Number(updates.capacity);
-    if (newCapacity < events[idx].registeredCount) {
-      return {
-        success: false,
-        message: `Capacity cannot be less than the current number of registrations (${events[idx].registeredCount}).`,
-      };
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.events || [];
     }
+    return [];
+  } catch (err) {
+    console.error('Failed to fetch events from backend:', err);
+    return [];
   }
-
-  events[idx] = { ...events[idx], ...updates };
-  saveCollection(KEYS.EVENTS, events);
-  return { success: true, event: events[idx] };
 }
 
-export function deleteEvent(id) {
-  const events = getAllEvents().filter((e) => e.id !== id);
-  saveCollection(KEYS.EVENTS, events);
-  return { success: true };
+/**
+ * Fetch single event by eventId or numeric id from backend
+ */
+export async function getEventById(id) {
+  if (!id) return null;
+  try {
+    const response = await fetch(`${API_BASE}/${id}`, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data.event || null;
+    }
+    return null;
+  } catch (err) {
+    console.error(`Failed to fetch event ${id}:`, err);
+    return null;
+  }
 }
 
-export function publishEvent(id) {
-  return updateEvent(id, { status: 'Published' });
+/**
+ * Create a new event (Draft or Published)
+ */
+export async function addEvent(eventData) {
+  try {
+    const response = await fetch(API_BASE, {
+      method: 'POST',
+      headers: getHeaders(true),
+      body: JSON.stringify(eventData),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to create event.' };
+    }
+
+    return { success: true, event: data.event, message: data.message };
+  } catch (err) {
+    return { success: false, message: 'Unable to reach server to create event.' };
+  }
 }
 
-export function suspendEvent(id) {
-  return updateEvent(id, { status: 'Suspended' });
+/**
+ * Update an existing event
+ */
+export async function updateEvent(id, updates) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(true),
+      body: JSON.stringify(updates),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to update event.' };
+    }
+
+    return { success: true, event: data.event, message: data.message };
+  } catch (err) {
+    return { success: false, message: 'Unable to reach server to update event.' };
+  }
 }
 
-export function resumeEvent(id) {
-  return updateEvent(id, { status: 'Published' });
+/**
+ * Publish an event
+ */
+export async function publishEvent(id) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}/publish`, {
+      method: 'PATCH',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to publish event.' };
+    }
+    return { success: true, event: data.event };
+  } catch (err) {
+    return { success: false, message: 'Failed to publish event.' };
+  }
 }
 
-export function cancelEvent(id) {
-  return updateEvent(id, { status: 'Cancelled' });
+/**
+ * Suspend an event
+ */
+export async function suspendEvent(id) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}/suspend`, {
+      method: 'PATCH',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to suspend event.' };
+    }
+    return { success: true, event: data.event };
+  } catch (err) {
+    return { success: false, message: 'Failed to suspend event.' };
+  }
 }
 
-// Called by registrationService after a successful registration/cancellation
-// to keep the event's registeredCount and derived "Full" status in sync.
-export function adjustRegisteredCount(id, delta) {
-  const events = getAllEvents();
-  const idx = events.findIndex((e) => e.id === id);
-  if (idx === -1) return;
-  const event = events[idx];
-  const newCount = Math.max(0, (event.registeredCount || 0) + delta);
-  let status = event.status;
-  if (status === 'Full' && newCount < event.capacity) status = 'Published';
-  if (status === 'Published' && newCount >= event.capacity) status = 'Full';
-  events[idx] = { ...event, registeredCount: newCount, status };
-  saveCollection(KEYS.EVENTS, events);
+/**
+ * Resume a suspended event
+ */
+export async function resumeEvent(id) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}/resume`, {
+      method: 'PATCH',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to resume event.' };
+    }
+    return { success: true, event: data.event };
+  } catch (err) {
+    return { success: false, message: 'Failed to resume event.' };
+  }
 }
 
-// Derived, read-only status: turns Published events whose registration
-// deadline has passed into "Expired" for display purposes without
-// mutating stored data destructively.
+/**
+ * Cancel an event
+ */
+export async function cancelEvent(id) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}/cancel`, {
+      method: 'PATCH',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to cancel event.' };
+    }
+    return { success: true, event: data.event };
+  } catch (err) {
+    return { success: false, message: 'Failed to cancel event.' };
+  }
+}
+
+/**
+ * Delete or soft-cancel an event
+ */
+export async function deleteEvent(id) {
+  try {
+    const response = await fetch(`${API_BASE}/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, message: data.message || 'Failed to delete event.' };
+    }
+    return { success: true, message: data.message };
+  } catch (err) {
+    return { success: false, message: 'Failed to delete event.' };
+  }
+}
+
+/**
+ * Derived, read-only status: turns Published events whose registration
+ * deadline has passed into "Expired" for display purposes without
+ * mutating stored data destructively.
+ */
 export function getDisplayStatus(event) {
+  if (!event) return '';
   if (['Draft', 'Suspended', 'Cancelled', 'Full'].includes(event.status)) return event.status;
   const today = new Date().toISOString().split('T')[0];
-  if (event.registrationExpiry < today) return 'Expired';
-  if (event.registeredCount >= event.capacity) return 'Full';
+  if (event.registrationExpiry && event.registrationExpiry < today) return 'Expired';
+  if (event.capacity && event.registeredCount >= event.capacity) return 'Full';
   return event.status;
 }
 
+/**
+ * Adjust registered count for an event (used by registrationService)
+ */
+export function adjustRegisteredCount(id, delta) {
+  // Compatibility stub for registration service
+  return delta;
+}
+
+/**
+ * Check whether an event is currently open for registration
+ */
 export function canRegister(event) {
   const displayStatus = getDisplayStatus(event);
   return displayStatus === 'Published';

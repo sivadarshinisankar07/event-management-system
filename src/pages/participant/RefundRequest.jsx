@@ -20,9 +20,18 @@ export default function RefundRequest() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  const registration = registrations.find((r) => r.registrationId === registrationId && r.userId === currentUser.userId);
+  const registration = registrations.find(
+    (r) =>
+      (r.registrationId === registrationId || r.id === registrationId) &&
+      (!currentUser || r.userId === currentUser.userId || r.userDbId === currentUser.id)
+  );
   const event = registration ? getEventById(registration.eventId) : null;
-  const myRefundForThis = refunds.find((r) => r.registrationId === registrationId);
+  const myRefundForThis = refunds.find(
+    (r) =>
+      r.registrationId === registrationId ||
+      r.registrationDbId === registrationId ||
+      (registration && (r.registrationId === registration.registrationId || r.registrationDbId === registration.id))
+  );
 
   if (!registration || !event) {
     return (
@@ -48,22 +57,26 @@ export default function RefundRequest() {
     );
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const validationErrors = validateRefundForm({ reason });
     setErrors(validationErrors);
     if (hasErrors(validationErrors)) return;
 
     setSubmitting(true);
-    const result = requestRefund(registrationId, reason);
-    setSubmitting(false);
-
-    if (!result.success) {
-      showToast(result.message, 'error');
-      return;
+    try {
+      const result = await requestRefund(registrationId, reason);
+      if (!result.success) {
+        showToast(result.message || 'Failed to submit refund request.', 'error');
+        return;
+      }
+      showToast('Refund request submitted successfully.', 'success');
+      navigate('/participant/registrations');
+    } catch (err) {
+      showToast('Error submitting refund request.', 'error');
+    } finally {
+      setSubmitting(false);
     }
-    showToast('Refund request submitted successfully.', 'success');
-    navigate('/participant/registrations');
   }
 
   return (

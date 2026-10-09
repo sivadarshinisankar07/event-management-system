@@ -23,12 +23,12 @@ export default function EditEvent() {
     );
   }
 
-  function handleSubmit(formData, status) {
+  async function handleSubmit(formData, status) {
     setSubmitting(true);
-    const result = updateEvent(id, { ...formData, status });
+    const result = await updateEvent(id, { ...formData, status });
     setSubmitting(false);
     if (!result.success) {
-      showToast(result.message, 'error');
+      showToast(result.message || 'Failed to update event.', 'error');
       return;
     }
     showToast('Event updated successfully.', 'success');

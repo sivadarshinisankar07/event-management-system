@@ -23,7 +23,10 @@ export default function Payment() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  const registration = registrations.find((r) => r.registrationId === registrationId && r.userId === currentUser.userId);
+  const registration = registrations.find(
+    (r) => (r.registrationId === registrationId || r.id === registrationId) &&
+           (!currentUser || r.userId === currentUser.userId || r.userDbId === currentUser.id)
+  );
   const event = registration ? getEventById(registration.eventId) : null;
 
   if (!registration || !event) {
@@ -46,16 +49,26 @@ export default function Payment() {
     setCard((c) => ({ ...c, [e.target.name]: e.target.value }));
   }
 
-  function handleOnlineSubmit(e) {
+  async function handleOnlineSubmit(e) {
     e.preventDefault();
     const validationErrors = validatePaymentForm(card);
     setErrors(validationErrors);
     if (hasErrors(validationErrors)) return;
 
     setSubmitting(true);
-    const result = submitOnlinePayment(registrationId, card);
-    setSubmitting(false);
-    navigate(`/participant/payment-result/${registrationId}`, { state: { success: result.success } });
+    try {
+      const result = await submitOnlinePayment(registrationId, card);
+      setSubmitting(false);
+      if (result.success) {
+        showToast('Payment successful! Registration confirmed.', 'success');
+      } else {
+        showToast(result.message || 'Payment failed.', 'error');
+      }
+      navigate(`/participant/payment-result/${registrationId}`, { state: { success: result.success } });
+    } catch (err) {
+      setSubmitting(false);
+      showToast('Error connecting to payment server.', 'error');
+    }
   }
 
   function handleOfflineAcknowledge() {

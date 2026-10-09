@@ -13,7 +13,10 @@ export default function MyTickets() {
   const navigate = useNavigate();
 
   const myTickets = useMemo(
-    () => tickets.filter((t) => t.userId === currentUser.userId).sort((a, b) => a.date.localeCompare(b.date)),
+    () =>
+      tickets
+        .filter((t) => !currentUser || t.userId === currentUser.userId || t.userDbId === currentUser.id)
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))),
     [tickets, currentUser]
   );
 

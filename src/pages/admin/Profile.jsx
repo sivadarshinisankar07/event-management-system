@@ -16,7 +16,7 @@ export default function Profile() {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const newErrors = {};
     if (!isRequired(form.fullName)) newErrors.fullName = 'This field is required.';
@@ -25,7 +25,7 @@ export default function Profile() {
     if (Object.keys(newErrors).length > 0) return;
 
     setSaving(true);
-    const result = updateProfile(form);
+    const result = await updateProfile(form);
     setSaving(false);
     if (result.success) showToast('Profile updated successfully.', 'success');
     else showToast(result.message, 'error');

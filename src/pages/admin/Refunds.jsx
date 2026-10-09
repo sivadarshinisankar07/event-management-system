@@ -28,21 +28,45 @@ export default function Refunds() {
     return [...result].sort((a, b) => b.requestDate.localeCompare(a.requestDate));
   }, [refunds, search, statusFilter]);
 
-  function handleApprove() {
-    approveRefund(confirmApprove.refundId);
-    showToast('Refund approved. Registration cancelled and ticket invalidated.', 'success');
-    setConfirmApprove(null);
+  const [processing, setProcessing] = useState(false);
+
+  async function handleApprove() {
+    setProcessing(true);
+    try {
+      const result = await approveRefund(confirmApprove.refundId);
+      if (result.success) {
+        showToast('Refund approved. Registration cancelled, ticket invalidated, and seat released.', 'success');
+      } else {
+        showToast(result.message || 'Failed to approve refund.', 'error');
+      }
+    } catch (err) {
+      showToast('Error approving refund.', 'error');
+    } finally {
+      setProcessing(false);
+      setConfirmApprove(null);
+    }
   }
 
-  function handleReject() {
+  async function handleReject() {
     if (!rejectionReason.trim()) {
       showToast('Please enter a rejection reason.', 'error');
       return;
     }
-    rejectRefund(rejectTarget.refundId, rejectionReason);
-    showToast('Refund request rejected.', 'success');
-    setRejectTarget(null);
-    setRejectionReason('');
+    setProcessing(true);
+    try {
+      const result = await rejectRefund(rejectTarget.refundId, rejectionReason);
+      if (result.success) {
+        showToast('Refund request rejected.', 'success');
+      } else {
+        showToast(result.message || 'Failed to reject refund.', 'error');
+      }
+    } catch (err) {
+      showToast('Error rejecting refund.', 'error');
+    } finally {
+      setProcessing(false);
+      setRejectTarget(null);
+      setRejectionReason('');
+    }
   }
 
   return (
@@ -113,7 +137,9 @@ export default function Refunds() {
         </div>
         <div className="modal-actions">
           <button className="btn btn-secondary" onClick={() => setRejectTarget(null)}>Cancel</button>
-          <button className="btn btn-danger" onClick={handleReject}>Reject Request</button>
+          <button className="btn btn-danger" onClick={handleReject} disabled={processing}>
+            {processing ? 'Rejecting...' : 'Reject Request'}
+          </button>
         </div>
       </Modal>
     </DashboardLayout>

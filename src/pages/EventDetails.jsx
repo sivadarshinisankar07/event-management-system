@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useEvents } from '../context/EventContext.jsx';
@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import Modal from '../components/Modal.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { getDisplayStatus } from '../services/eventService.js';
+import { recordRecentlyAccessed } from '../services/discoveryService.js';
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -26,6 +27,12 @@ export default function EventDetails() {
   const [submitting, setSubmitting] = useState(false);
 
   const event = getEventById(id);
+
+  useEffect(() => {
+    if (event && isAuthenticated) {
+      recordRecentlyAccessed(event.dbId || event.eventId || id);
+    }
+  }, [event, isAuthenticated, id]);
 
   const alreadyRegistered = useMemo(() => {
     if (!isAuthenticated || !currentUser) return false;
@@ -63,7 +70,7 @@ export default function EventDetails() {
 
   const blockReason = getBlockReason();
 
-  function handleRegisterClick() {
+  async function handleRegisterClick() {
     if (!isAuthenticated) {
       setGuestModalOpen(true);
       return;
@@ -78,11 +85,11 @@ export default function EventDetails() {
     }
 
     setSubmitting(true);
-    const result = registerForEvent(currentUser, event);
+    const result = await registerForEvent(currentUser, event);
     setSubmitting(false);
 
     if (!result.success) {
-      showToast(result.message, 'error');
+      showToast(result.message || 'Registration failed.', 'error');
       return;
     }
 
