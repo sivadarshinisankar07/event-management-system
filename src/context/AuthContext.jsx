@@ -49,6 +49,12 @@ export function AuthProvider({ children }) {
     return result;
   }, []);
 
+  const googleLogin = useCallback(async (credential) => {
+    const result = await authService.googleLogin(credential);
+    if (result.success) setCurrentUser(result.user);
+    return result;
+  }, []);
+
   const logout = useCallback(() => {
     authService.logout();
     setCurrentUser(null);
@@ -69,6 +75,7 @@ export function AuthProvider({ children }) {
     loading,
     login,
     register,
+    googleLogin,
     logout,
     updateProfile,
   };

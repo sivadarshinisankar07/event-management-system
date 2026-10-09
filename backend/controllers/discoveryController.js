@@ -188,6 +188,82 @@ export async function getTrendingEvents(req, res) {
 }
 
 /**
+ * Helper to check whether two date/time intervals overlap.
+ */
+export function checkTimesOverlap(date1, start1, end1, date2, start2, end2) {
+  const d1 = String(date1).split('T')[0];
+  const d2 = String(date2).split('T')[0];
+  if (d1 !== d2) return false;
+  const s1 = String(start1);
+  const e1 = String(end1);
+  const s2 = String(start2);
+  const e2 = String(end2);
+  return s1 < e2 && e1 > s2;
+}
+
+/**
+ * Detect scheduling conflicts for a specific event against user's registered events.
+ * GET /api/discovery/conflicts/:eventId
+ */
+export async function detectEventConflicts(req, res) {
+  try {
+    const userId = req.user.id;
+    const { eventId } = req.params;
+
+    const [targetRows] = await pool.query(
+      'SELECT id, event_id, name, date, start_time, end_time, venue FROM events WHERE event_id = ? OR id = ? LIMIT 1',
+      [eventId, isNaN(eventId) ? -1 : Number(eventId)]
+    );
+
+    if (targetRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const target = targetRows[0];
+    const targetDateStr = new Date(target.date).toISOString().split('T')[0];
+
+    const [registeredRows] = await pool.query(
+      `SELECT e.id, e.event_id, e.name, e.date, e.start_time, e.end_time, e.venue
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       WHERE r.user_id = ?
+         AND r.registration_status IN ('Confirmed', 'Pending')
+         AND e.id != ?`,
+      [userId, target.id]
+    );
+
+    const conflicts = [];
+    for (const reg of registeredRows) {
+      const regDateStr = new Date(reg.date).toISOString().split('T')[0];
+      if (checkTimesOverlap(targetDateStr, target.start_time, target.end_time, regDateStr, reg.start_time, reg.end_time)) {
+        conflicts.push({
+          conflictingEventId: reg.event_id,
+          conflictingEventName: reg.name,
+          date: regDateStr,
+          startTime: reg.start_time,
+          endTime: reg.end_time,
+          venue: reg.venue,
+          explanation: `Time conflict with your registered event "${reg.name}" (${reg.start_time} - ${reg.end_time}) on ${regDateStr}.`,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      hasConflict: conflicts.length > 0,
+      conflictCount: conflicts.length,
+      conflicts,
+      message: conflicts.length > 0
+        ? `Warning: This event has a scheduling conflict with ${conflicts.length} event(s) you are registered for.`
+        : 'No scheduling conflicts detected. Your schedule is clear!',
+    });
+  } catch (err) {
+    console.error('[DETECT_CONFLICTS_ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Failed to analyze schedule conflicts.' });
+  }
+}
+
+/**
  * Get Personalized Smart Recommendations.
  * GET /api/discovery/recommendations
  */
@@ -217,7 +293,16 @@ export async function getSmartRecommendations(req, res) {
     );
     const pastCategories = new Set(pastRegRows.map((r) => r.category));
 
-    // 4. Fetch all upcoming published events
+    // 4. Fetch registered events for schedule conflict detection
+    const [userRegEvents] = await pool.query(
+      `SELECT e.id, e.event_id, e.name, e.date, e.start_time, e.end_time, e.venue
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       WHERE r.user_id = ? AND r.registration_status IN ('Confirmed', 'Pending')`,
+      [userId]
+    );
+
+    // 5. Fetch all upcoming published events
     const [candidateRows] = await pool.query(
       `SELECT e.*, u.full_name AS creator_name, u.email AS creator_email
        FROM events e
@@ -228,7 +313,7 @@ export async function getSmartRecommendations(req, res) {
       [today]
     );
 
-    // 5. Score and personalize each candidate event
+    // 6. Score, personalize, and check schedule conflicts for each candidate event
     const scored = candidateRows.map((row) => {
       let score = 0;
       const reasons = [];
@@ -263,11 +348,25 @@ export async function getSmartRecommendations(req, res) {
         reasons.push('Upcoming campus highlight');
       }
 
+      // Schedule conflict analysis
+      const candidateDate = new Date(row.date).toISOString().split('T')[0];
+      const conflict = userRegEvents.find((reg) => {
+        const regDate = new Date(reg.date).toISOString().split('T')[0];
+        return checkTimesOverlap(candidateDate, row.start_time, row.end_time, regDate, reg.start_time, reg.end_time);
+      });
+
+      const hasConflict = Boolean(conflict);
+      const conflictExplanation = conflict
+        ? `⚠️ Schedule Conflict: Overlaps with registered event "${conflict.name}" on ${candidateDate} (${conflict.start_time} - ${conflict.end_time})`
+        : null;
+
       return {
         event: formatEventResponse(row),
         score,
         recommendationReason: reasons[0],
         allReasons: reasons,
+        hasConflict,
+        conflictExplanation,
       };
     });
 
@@ -286,6 +385,8 @@ export async function getSmartRecommendations(req, res) {
         recommendationScore: item.score,
         recommendationReason: item.recommendationReason,
         matchReasons: item.allReasons,
+        hasScheduleConflict: item.hasConflict,
+        conflictExplanation: item.conflictExplanation,
       })),
     });
   } catch (err) {

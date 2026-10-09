@@ -6,6 +6,7 @@ import {
   getRecentlyAccessed,
   getTrendingEvents,
   getSmartRecommendations,
+  detectEventConflicts,
 } from '../controllers/discoveryController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
@@ -19,8 +20,9 @@ router.put('/preferences', authenticateToken, updateUserPreferences);
 router.post('/recent/:eventId', authenticateToken, recordRecentlyAccessed);
 router.get('/recent', authenticateToken, getRecentlyAccessed);
 
-// Smart Discovery & Recommendations
+// Smart Discovery, Recommendations & Conflict Detection
 router.get('/recommendations', authenticateToken, getSmartRecommendations);
+router.get('/conflicts/:eventId', authenticateToken, detectEventConflicts);
 router.get('/trending', getTrendingEvents);
 
 export default router;

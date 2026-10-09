@@ -4,10 +4,12 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import { EventProvider } from './context/EventContext.jsx';
 import { RegistrationProvider } from './context/RegistrationContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
+import { LanguageProvider } from './context/LanguageContext.jsx';
 
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import EventAssistant from './components/EventAssistant.jsx';
 
 import Home from './pages/Home.jsx';
 import Events from './pages/Events.jsx';
@@ -30,6 +32,7 @@ import ManageEvents from './pages/admin/ManageEvents.jsx';
 import AddEvent from './pages/admin/AddEvent.jsx';
 import EditEvent from './pages/admin/EditEvent.jsx';
 import AdminRegistrations from './pages/admin/Registrations.jsx';
+import AdminUsers from './pages/admin/Users.jsx';
 import AdminPayments from './pages/admin/Payments.jsx';
 import AdminRefunds from './pages/admin/Refunds.jsx';
 import CheckIn from './pages/admin/CheckIn.jsx';
@@ -74,6 +77,7 @@ function AppLayout() {
           <Route path="/admin/events/add" element={<ProtectedRoute role="admin"><AddEvent /></ProtectedRoute>} />
           <Route path="/admin/events/edit/:id" element={<ProtectedRoute role="admin"><EditEvent /></ProtectedRoute>} />
           <Route path="/admin/registrations" element={<ProtectedRoute role="admin"><AdminRegistrations /></ProtectedRoute>} />
+          <Route path="/admin/users" element={<ProtectedRoute role="admin"><AdminUsers /></ProtectedRoute>} />
           <Route path="/admin/payments" element={<ProtectedRoute role="admin"><AdminPayments /></ProtectedRoute>} />
           <Route path="/admin/refunds" element={<ProtectedRoute role="admin"><AdminRefunds /></ProtectedRoute>} />
           <Route path="/admin/checkin" element={<ProtectedRoute role="admin"><CheckIn /></ProtectedRoute>} />
@@ -84,20 +88,24 @@ function AppLayout() {
         </Routes>
       </div>
       {!isDashboard && <Footer />}
+      <EventAssistant />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <EventProvider>
-        <RegistrationProvider>
-          <ToastProvider>
-            <AppLayout />
-          </ToastProvider>
-        </RegistrationProvider>
-      </EventProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <EventProvider>
+          <RegistrationProvider>
+            <ToastProvider>
+              <AppLayout />
+            </ToastProvider>
+          </RegistrationProvider>
+        </EventProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
+

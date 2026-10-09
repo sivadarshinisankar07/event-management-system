@@ -1,7 +1,22 @@
 import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import pool from '../config/db.js';
 import { generateToken } from '../utils/jwtUtils.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export function getActiveGoogleClientId() {
+  try {
+    dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+  } catch {
+    // ignore
+  }
+  return process.env.GOOGLE_CLIENT_ID;
+}
 
 /**
  * Format user record from DB into a clean, safe public representation.
@@ -251,7 +266,7 @@ export async function updateProfile(req, res) {
  */
 export async function googleAuth(req, res) {
   try {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientId = getActiveGoogleClientId();
 
     // If GOOGLE_CLIENT_ID is missing or still set to template placeholder
     if (!clientId || clientId === 'your_google_client_id_here' || clientId.trim() === '') {
@@ -351,3 +366,55 @@ export async function adminCheck(req, res) {
     user: formatUser(req.user),
   });
 }
+
+/**
+ * Get all registered user accounts (Admin Only)
+ * GET /api/auth/users
+ */
+export async function getAllUsers(req, res) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, user_id, full_name, email, phone, role, department, admin_id, google_id, created_at,
+              (SELECT COUNT(*) FROM registrations r WHERE r.user_id = users.id) AS registration_count
+       FROM users
+       ORDER BY created_at DESC`
+    );
+
+    const safeUsers = rows.map((r) => ({
+      ...formatUser(r),
+      registrationCount: Number(r.registration_count || 0),
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: safeUsers.length,
+      users: safeUsers,
+    });
+  } catch (err) {
+    console.error('[AUTH_GET_ALL_USERS_ERROR]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve user accounts.',
+    });
+  }
+}
+
+/**
+ * Public OAuth configuration check
+ * GET /api/auth/oauth-config
+ */
+export async function getOAuthConfig(req, res) {
+  const clientId = getActiveGoogleClientId();
+  const isConfigured = Boolean(
+    clientId && clientId !== 'your_google_client_id_here' && clientId.trim() !== ''
+  );
+
+  return res.status(200).json({
+    success: true,
+    google: {
+      configured: isConfigured,
+      clientId: isConfigured ? clientId : null,
+    },
+  });
+}
+

@@ -8,7 +8,7 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import Modal from '../components/Modal.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { getDisplayStatus } from '../services/eventService.js';
-import { recordRecentlyAccessed } from '../services/discoveryService.js';
+import { recordRecentlyAccessed, detectEventConflicts } from '../services/discoveryService.js';
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -25,12 +25,18 @@ export default function EventDetails() {
 
   const [guestModalOpen, setGuestModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [conflictData, setConflictData] = useState(null);
 
   const event = getEventById(id);
 
   useEffect(() => {
     if (event && isAuthenticated) {
       recordRecentlyAccessed(event.dbId || event.eventId || id);
+      detectEventConflicts(event.dbId || event.eventId || id)
+        .then((res) => {
+          if (res?.success) setConflictData(res);
+        })
+        .catch(() => {});
     }
   }, [event, isAuthenticated, id]);
 
@@ -115,6 +121,40 @@ export default function EventDetails() {
           </div>
 
           <p className="text-muted mt-16" style={{ lineHeight: 1.6 }}>{event.description}</p>
+
+          {/* Schedule Conflict Alert Banner */}
+          {conflictData?.hasConflict && (
+            <div
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid #f87171',
+                borderRadius: 10,
+                padding: '14px 18px',
+                marginTop: 16,
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 24, lineHeight: 1 }}>⚠️</span>
+              <div>
+                <div style={{ fontWeight: 700, color: '#b91c1c', fontSize: 15 }}>
+                  Schedule Conflict Detected
+                </div>
+                <div style={{ fontSize: 13, color: '#7f1d1d', marginTop: 4, lineHeight: 1.5 }}>
+                  {conflictData.conflicts.map((c, i) => (
+                    <div key={i}>
+                      • {c.explanation}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12, color: '#991b1b', marginTop: 6, fontStyle: 'italic' }}>
+                  Please ensure you do not double-book your attendance for conflicting campus events.
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="divider" />
 

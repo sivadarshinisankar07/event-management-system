@@ -11,6 +11,7 @@ export const ADMIN_LINKS = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: '🏠', end: true },
   { to: '/admin/events', label: 'Manage Events', icon: '📅' },
   { to: '/admin/registrations', label: 'Registrations', icon: '📝' },
+  { to: '/admin/users', label: 'Users', icon: '👥' },
   { to: '/admin/payments', label: 'Payments', icon: '💳' },
   { to: '/admin/refunds', label: 'Refunds', icon: '↩️' },
   { to: '/admin/checkin', label: 'Check-in', icon: '✅' },

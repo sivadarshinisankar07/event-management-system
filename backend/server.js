@@ -13,6 +13,7 @@ import refundRoutes from './routes/refundRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import discoveryRoutes from './routes/discoveryRoutes.js';
 import preferenceRoutes from './routes/preferenceRoutes.js';
+import assistantRoutes from './routes/assistantRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +41,7 @@ app.use('/api/refunds', refundRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/discovery', discoveryRoutes);
 app.use('/api/preferences', preferenceRoutes);
+app.use('/api/assistant', assistantRoutes);
 
 // Health Check Endpoint (Phase 1 Requirement)
 app.get('/api/health', async (req, res) => {

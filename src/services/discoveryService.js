@@ -191,3 +191,27 @@ export async function getTrendingEvents(limit = 6) {
     .sort((a, b) => (b.registeredCount || 0) - (a.registeredCount || 0))
     .slice(0, limit);
 }
+
+/**
+ * Detect scheduling conflicts between target event and user's registered events.
+ */
+export async function detectEventConflicts(eventId) {
+  if (!eventId) return { success: false, hasConflict: false, conflicts: [] };
+
+  try {
+    const response = await fetch(`${API_BASE}/discovery/conflicts/${eventId}`, {
+      method: 'GET',
+      headers: getHeaders(false),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return data;
+    }
+    return { success: false, hasConflict: false, conflicts: [], message: data.message };
+  } catch (err) {
+    console.warn('API error detecting event conflicts:', err);
+    return { success: false, hasConflict: false, conflicts: [] };
+  }
+}
+

@@ -167,3 +167,74 @@ export async function updateProfile(userId, updates) {
     };
   }
 }
+
+/**
+ * Check Google OAuth configuration status from server
+ */
+export async function getOAuthConfig() {
+  try {
+    const response = await fetch(`${API_BASE}/oauth-config`);
+    if (!response.ok) return { configured: false, clientId: null };
+    const data = await response.json();
+    return data.google || { configured: false, clientId: null };
+  } catch {
+    return { configured: false, clientId: null };
+  }
+}
+
+/**
+ * Sign in or register via Google OAuth 2.0 credential
+ */
+export async function googleLogin(credential) {
+  try {
+    const response = await fetch(`${API_BASE}/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        configured: data.configured !== false,
+        message: data.message || 'Google authentication failed.',
+      };
+    }
+
+    saveSession(data.token, data.user);
+    return { success: true, user: data.user, token: data.token };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Unable to connect to the authentication server for Google Sign-In.',
+    };
+  }
+}
+
+/**
+ * Get all users (Administrator Only)
+ */
+export async function getAllUsers() {
+  const token = getAuthToken();
+  if (!token) return { success: false, users: [] };
+
+  try {
+    const response = await fetch(`${API_BASE}/users`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (response.ok && data.success) {
+      return { success: true, users: data.users || [] };
+    }
+    return { success: false, message: data.message, users: [] };
+  } catch (err) {
+    return { success: false, message: err.message, users: [] };
+  }
+}
+

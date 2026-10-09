@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useRegistrations } from '../../context/RegistrationContext.jsx';
+import { useTranslation } from '../../context/LanguageContext.jsx';
 import DashboardLayout from '../../components/DashboardLayout.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import StatusBadge from '../../components/StatusBadge.jsx';
@@ -12,6 +13,7 @@ import { getSmartRecommendations, getRecentlyAccessed } from '../../services/dis
 export default function ParticipantDashboard() {
   const { currentUser } = useAuth();
   const { registrations, tickets, loading } = useRegistrations();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [recommendations, setRecommendations] = useState([]);
@@ -59,8 +61,8 @@ export default function ParticipantDashboard() {
     <DashboardLayout role="participant">
       <div className="page-header">
         <div>
-          <h1>Welcome, {currentUser.fullName.split(' ')[0]}</h1>
-          <p className="subtitle">Here's an overview of your event activity and personalized recommendations.</p>
+          <h1>{t('dash.welcome', 'Welcome')}, {currentUser.fullName.split(' ')[0]}</h1>
+          <p className="subtitle">{t('dash.overview', "Here's an overview of your event activity and recommendations.")}</p>
         </div>
         <Link to="/participant/profile" className="btn btn-outline btn-sm">
           ⚙️ Preferences
@@ -68,10 +70,10 @@ export default function ParticipantDashboard() {
       </div>
 
       <div className="grid grid-4 mb-24">
-        <StatCard label="Total Registrations" value={summary.totalRegistrations} icon="📝" color="primary" />
-        <StatCard label="Confirmed" value={summary.confirmedRegistrations} icon="✅" color="success" />
-        <StatCard label="Pending Payments" value={summary.pendingPayments} icon="⏳" color="warning" />
-        <StatCard label="My Tickets" value={summary.totalTickets} icon="🎟️" color="info" />
+        <StatCard label={t('dash.totalRegistrations', 'Total Registrations')} value={summary.totalRegistrations} icon="📝" color="primary" />
+        <StatCard label={t('dash.confirmed', 'Confirmed')} value={summary.confirmedRegistrations} icon="✅" color="success" />
+        <StatCard label={t('dash.pendingPayments', 'Pending Payments')} value={summary.pendingPayments} icon="⏳" color="warning" />
+        <StatCard label={t('dash.myTickets', 'My Tickets')} value={summary.totalTickets} icon="🎟️" color="info" />
       </div>
 
       {/* Smart Recommendations Section */}
@@ -79,13 +81,13 @@ export default function ParticipantDashboard() {
         <div className="card mb-24">
           <div className="flex justify-between items-center mb-16">
             <div>
-              <h3 style={{ margin: 0 }}>✨ Recommended For You</h3>
+              <h3 style={{ margin: 0 }}>{t('dash.recommendedForYou', '✨ Recommended For You')}</h3>
               <p className="text-muted" style={{ fontSize: 13, margin: '4px 0 0 0' }}>
-                Curated based on your department, selected preferences, and campus activity.
+                {t('dash.recommendedSubtitle', 'Curated based on your interests, department, and campus activity.')}
               </p>
             </div>
             <Link to="/events" className="text-muted" style={{ fontSize: 13, fontWeight: 600 }}>
-              View all &rarr;
+              {t('dash.viewAll', 'View all')} &rarr;
             </Link>
           </div>
 
@@ -96,7 +98,7 @@ export default function ParticipantDashboard() {
                 className="card"
                 style={{
                   padding: 16,
-                  border: '1px solid var(--color-border)',
+                  border: rec.hasScheduleConflict ? '1px solid #f87171' : '1px solid var(--color-border)',
                   backgroundColor: 'var(--color-bg-secondary, #fafafa)',
                 }}
               >
@@ -115,13 +117,31 @@ export default function ParticipantDashboard() {
                     {rec.recommendationReason || `${rec.category}`}
                   </span>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>
-                    {rec.price > 0 ? `₹${rec.price}` : 'Free'}
+                    {rec.price > 0 ? `₹${rec.price}` : t('common.free', 'Free')}
                   </span>
                 </div>
                 <h4 style={{ margin: '4px 0 6px 0', fontSize: 15 }}>{rec.name}</h4>
-                <p className="text-muted" style={{ fontSize: 12, margin: '0 0 12px 0' }}>
+                <p className="text-muted" style={{ fontSize: 12, margin: '0 0 10px 0' }}>
                   📅 {rec.date} • 📍 {rec.venue}
                 </p>
+
+                {rec.hasScheduleConflict && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#b91c1c',
+                      backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid #fca5a5',
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      marginBottom: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {rec.conflictExplanation || '⚠️ Time conflict with a registered event'}
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center">
                   <span className="text-muted" style={{ fontSize: 11 }}>
                     {rec.registeredCount}/{rec.capacity} registered
@@ -131,7 +151,7 @@ export default function ParticipantDashboard() {
                     className="btn btn-primary btn-sm"
                     style={{ padding: '4px 12px', fontSize: 12 }}
                   >
-                    View Details
+                    {t('common.viewDetails', 'View Details')}
                   </Link>
                 </div>
               </div>
